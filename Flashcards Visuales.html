@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cartas Visuales · Los Bienes</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="estilos.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    #app { min-height:100vh; display:flex; flex-direction:column; }
+    .screen { animation: fadein .35s ease; }
+    @keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+    .hidden { display:none !important; }
+
+    /* ── LOADING ── */
+    #scr-load { flex:1; display:flex; align-items:center; justify-content:center; }
+    .ld-box { text-align:center; }
+    .ld-spin { width:48px;height:48px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--blue);animation:ld-spin .75s linear infinite;margin:0 auto 20px; }
+    @keyframes ld-spin { to{transform:rotate(360deg)} }
+    .ld-bar { height:5px;border-radius:99px;background:var(--line);overflow:hidden;margin:16px auto 8px;width:240px; }
+    .ld-bar > i { display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .3s;width:0%; }
+
+    /* ── START ── */
+    #scr-start { flex:1;display:flex;align-items:center;justify-content:center;padding:40px 20px; }
+    .fv-start { text-align:center;max-width:400px; }
+    .deck-preview { position:relative;width:200px;height:278px;margin:0 auto 32px; }
+    .dp-card { position:absolute;inset:0;border-radius:16px;box-shadow:0 8px 28px -8px rgba(0,0,0,.65); }
+    .dp-card:nth-child(1) { background:var(--bg-2);border:1px solid var(--line-soft);transform:rotate(-9deg) translate(-16px,10px); }
+    .dp-card:nth-child(2) { background:var(--panel);border:1px solid var(--line-soft);transform:rotate(-4deg) translate(-6px,5px); }
+    .dp-card:nth-child(3) { background:var(--panel);border:1px solid var(--line);transform:rotate(5deg) translate(13px,3px); }
+    .dp-card:nth-child(4) { overflow:hidden;background:#fff;z-index:5; }
+    .dp-card:nth-child(4) img { width:100%;height:100%;object-fit:contain;display:block; }
+    .fv-start h2 { font-size:28px;font-weight:800;margin-bottom:8px; }
+    .fv-start .sub { color:var(--txt-dim);font-size:15px;margin-bottom:22px;line-height:1.55; }
+    .fv-start-meta { display:flex;gap:16px;justify-content:center;margin-bottom:28px;flex-wrap:wrap; }
+    .fv-meta-item { font-family:var(--ff-mono);font-size:11.5px;color:var(--txt-faint);display:flex;align-items:center;gap:5px; }
+
+    /* ── PLAY ── */
+    #scr-play { flex:1;padding:clamp(12px,3vw,28px) clamp(14px,4vw,40px) 40px; }
+    .fv-play {
+      max-width:1060px;margin:0 auto;
+      display:grid;grid-template-columns:1fr 308px;gap:28px;
+      align-items:start;
+    }
+
+    /* Progress */
+    .fv-prog { display:flex;align-items:center;gap:12px;margin-bottom:22px; }
+    .fv-prog-track { flex:1;height:6px;border-radius:99px;background:var(--line-soft);overflow:hidden; }
+    .fv-prog-fill { height:100%;border-radius:99px;width:0%;background:linear-gradient(90deg,var(--blue),var(--green));transition:width .5s ease; }
+    .fv-prog-lbl { font-family:var(--ff-mono);font-size:12px;color:var(--txt-faint);white-space:nowrap; }
+
+    /* Card column */
+    .fv-col { display:flex;flex-direction:column;align-items:center; }
+    .fv-scene { perspective:1100px; }
+
+    .fv-wrap {
+      border-radius:18px;
+      transition:transform .22s ease, opacity .26s;
+      cursor:pointer;
+    }
+    .fv-wrap:not(.is-flipped):hover { transform:translateY(-8px); }
+    .fv-wrap.is-flipped { cursor:default; }
+
+    @keyframes arrive {
+      from { transform:translateX(56px) rotate(5deg);opacity:0; }
+      to   { transform:none;opacity:1; }
+    }
+    .fv-wrap.arriving { animation:arrive .44s cubic-bezier(.2,.85,.3,1) forwards; }
+    .fv-wrap.leaving  { transform:translateX(-90px) rotate(-10deg) !important;opacity:0 !important;transition:transform .3s ease,opacity .26s !important; }
+
+    .fv-card {
+      width:300px;height:420px;
+      transform-style:preserve-3d;
+      border-radius:18px;
+      box-shadow:0 18px 55px -12px rgba(0,0,0,.82),0 2px 0 rgba(255,255,255,.06);
+      transition:transform .62s cubic-bezier(.2,.85,.25,1);
+    }
+    .fv-face {
+      position:absolute;inset:0;
+      backface-visibility:hidden;-webkit-backface-visibility:hidden;
+      border-radius:18px;overflow:hidden;background:#fff;
+    }
+    .fv-face.fv-back { transform:rotateY(180deg);background:#f4f7ff; }
+    .fv-face img { width:100%;height:100%;object-fit:contain;display:block; }
+
+    .fv-chip {
+      position:absolute;top:11px;left:12px;
+      font-family:var(--ff-mono);font-size:9px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;
+      padding:2px 7px;border-radius:5px;
+    }
+    .fv-front .fv-chip { background:rgba(0,0,0,.5);color:rgba(220,232,255,.85); }
+    .fv-back  .fv-chip { background:rgba(79,155,255,.2);color:#4f9bff; }
+
+    .fv-cta { margin-top:15px;font-family:var(--ff-mono);font-size:12px;color:var(--txt-faint);text-align:center;transition:opacity .2s; }
+    .fv-kbd { color:var(--txt-dim);font-weight:700; }
+
+    /* ── PANEL ── */
+    .fv-panel {
+      background:color-mix(in oklab,var(--panel) 92%,transparent);
+      border:1px solid var(--line);border-radius:22px;padding:22px;
+      position:sticky;top:80px;
+      box-shadow:0 10px 44px -14px rgba(0,0,0,.55);
+      display:flex;flex-direction:column;gap:0;
+    }
+
+    /* Stats row */
+    .fv-stats { display:flex;align-items:center;gap:8px;margin-bottom:18px; }
+    .fv-st {
+      display:flex;align-items:center;gap:5px;
+      padding:6px 10px;border-radius:10px;
+      background:var(--bg-2);border:1px solid var(--line-soft);
+      font-family:var(--ff-mono);font-size:13px;font-weight:700;
+    }
+    .fv-st svg { width:13px;height:13px;flex:none; }
+    .fv-st.gold  { color:var(--gold); }
+    .fv-st.green { color:var(--green); }
+
+    /* Timer ring */
+    .fv-timer { margin-left:auto;position:relative;width:44px;height:44px;flex:none;display:grid;place-items:center; }
+    .fv-timer svg { position:absolute;inset:0;width:44px;height:44px;transform:rotate(-90deg); }
+    .fv-timer circle { fill:none;stroke-width:3.5; }
+    .fv-timer .t-bg { stroke:var(--line-soft); }
+    .fv-timer .t-fg { stroke:var(--green);stroke-linecap:round;transition:stroke-dashoffset .22s linear,stroke .3s; }
+    .fv-timer.warn .t-fg { stroke:var(--red); }
+    .fv-timer .t-n { font-family:var(--ff-mono);font-weight:700;font-size:13px;position:relative;z-index:1; }
+    .fv-timer.warn .t-n { color:var(--red); }
+
+    .fv-hr { border:none;border-top:1px solid var(--line-soft);margin:14px 0; }
+    .fv-lbl { font-family:var(--ff-mono);font-size:10px;text-transform:uppercase;letter-spacing:1.4px;color:var(--txt-faint);display:block;margin-bottom:8px; }
+    .fv-lbl.blue  { color:color-mix(in oklab,var(--blue) 70%,var(--txt-faint)); }
+    .fv-lbl.green { color:color-mix(in oklab,var(--green) 70%,var(--txt-faint)); }
+
+    .fv-q { font-size:15px;font-weight:700;line-height:1.38;text-wrap:pretty;margin:0; }
+    .fv-a { font-size:12.5px;line-height:1.55;color:var(--txt-dim);text-wrap:pretty;margin:0;white-space:pre-line; }
+
+    /* Hint */
+    .fv-hint-wrap { margin-top:14px; }
+    .fv-hint-btn {
+      display:flex;align-items:center;gap:7px;width:100%;
+      padding:9px 13px;border-radius:11px;
+      background:var(--bg-2);border:1px solid var(--line-soft);
+      color:var(--txt-dim);font-size:13px;font-weight:600;
+      cursor:pointer;transition:.15s;font-family:var(--ff);
+    }
+    .fv-hint-btn:hover:not(:disabled) { border-color:var(--gold);color:var(--gold); }
+    .fv-hint-btn:disabled { opacity:.35;cursor:default; }
+    .fv-hint-btn svg { width:15px;height:15px;flex:none; }
+    .fv-hint-cost { margin-left:auto;font-family:var(--ff-mono);font-size:11px;opacity:.75; }
+    .fv-hint-box {
+      margin-top:9px;padding:10px 12px;
+      background:color-mix(in oklab,var(--gold) 9%,var(--bg-2));
+      border:1px solid color-mix(in oklab,var(--gold) 25%,var(--line-soft));
+      border-radius:11px;font-size:12.5px;line-height:1.5;color:var(--txt-dim);white-space:pre-line;
+    }
+    .fv-hint-box::before { content:"💡 "; }
+
+    /* Rate */
+    .fv-rate { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px; }
+
+    /* Score pop */
+    .fv-pop {
+      position:fixed;pointer-events:none;z-index:80;
+      font-family:var(--ff-mono);font-weight:800;font-size:28px;
+      animation:fv-pop 1.1s ease forwards;
+    }
+    @keyframes fv-pop {
+      0%  { opacity:0;transform:translateY(0) scale(.6); }
+      18% { opacity:1;transform:translateY(-14px) scale(1.08); }
+      100%{ opacity:0;transform:translateY(-56px) scale(.95); }
+    }
+    .fv-pop.plus { color:var(--green); }
+    .fv-pop.minus{ color:var(--red); }
+
+    /* ── RESULTS ── */
+    #scr-results { flex:1;display:flex;align-items:center;justify-content:center;padding:40px 20px; }
+    .fv-res {
+      text-align:center;max-width:540px;width:100%;
+      background:var(--panel);border:1px solid var(--line);
+      border-radius:24px;padding:clamp(28px,5vw,48px);
+      box-shadow:0 24px 60px -20px rgba(0,0,0,.7);
+    }
+    .fv-medal { font-size:52px;margin-bottom:16px;line-height:1; }
+    .fv-res h2 { font-size:28px;font-weight:800; }
+    .fv-res .rsub { color:var(--txt-dim);font-size:15px;margin:8px 0 24px; }
+    .fv-rstats { display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px; }
+    .fv-rstat { background:var(--bg-2);border:1px solid var(--line-soft);border-radius:14px;padding:16px 10px; }
+    .fv-rstat b { display:block;font-family:var(--ff-mono);font-size:27px;font-weight:700; }
+    .fv-rstat span { font-size:11px;color:var(--txt-faint);font-family:var(--ff-mono);text-transform:uppercase;letter-spacing:.9px; }
+    .fv-rstat.good b { color:var(--green); }
+    .fv-rstat.bad  b { color:var(--red); }
+    .fv-rstat.pts  b { color:var(--gold); }
+    .fv-ract { display:flex;gap:10px;justify-content:center;flex-wrap:wrap; }
+    .fv-best-streak { display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:22px;font-family:var(--ff-mono);font-size:12px;color:var(--txt-faint); }
+
+    /* Responsive */
+    @media (max-width:820px) {
+      .fv-play { grid-template-columns:1fr; }
+      .fv-panel { position:static; }
+      .fv-card { width:260px;height:364px; }
+    }
+    @media (max-width:460px) {
+      .fv-card { width:230px;height:322px; }
+      .deck-preview { width:170px;height:238px; }
+      .dp-card { border-radius:13px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="brand" id="btn-home-top" style="cursor:pointer">
+      <div class="mark">B</div>
+      <div class="b-txt"><b>Los Bienes</b><span>Examen de Grado</span></div>
+    </div>
+    <div class="top-stats">
+      <div class="chip pts" style="gap:6px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.8 5.9 21l1.2-6.9-5-4.8 6.9-.9z"/></svg>
+        <span id="total-pts">—</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- LOADING -->
+  <div id="scr-load">
+    <div class="ld-box">
+      <div class="ld-spin"></div>
+      <p style="font-size:17px;font-weight:800;margin-bottom:6px">Cargando cartas</p>
+      <p style="color:var(--txt-dim);font-size:14px">Renderizando páginas del PDF…</p>
+      <div class="ld-bar"><i id="ld-bar"></i></div>
+      <span style="font-family:var(--ff-mono);font-size:12px;color:var(--txt-faint)" id="ld-txt">0 / 20</span>
+    </div>
+  </div>
+
+  <!-- START -->
+  <div id="scr-start" class="screen hidden">
+    <div class="fv-start">
+      <div class="deck-preview">
+        <div class="dp-card"></div>
+        <div class="dp-card"></div>
+        <div class="dp-card"></div>
+        <div class="dp-card"><img id="dp-img" alt=""></div>
+      </div>
+      <h2>Cartas Visuales</h2>
+      <p class="sub">Estudia con las imágenes reales del examen.<br>Gira cada carta y pon a prueba tu memoria.</p>
+      <div class="fv-start-meta">
+        <span class="fv-meta-item">📋 10 cartas</span>
+        <span class="fv-meta-item">⏱ 45 seg / carta</span>
+        <span class="fv-meta-item">💡 Pistas disponibles</span>
+      </div>
+      <button class="btn primary" id="btn-start" style="font-size:15px;padding:14px 32px">
+        Comenzar
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- PLAY -->
+  <div id="scr-play" class="screen hidden">
+    <div class="fv-play">
+
+      <!-- Left: card -->
+      <div class="fv-col">
+        <div class="fv-prog" style="width:100%;max-width:360px">
+          <div class="fv-prog-track"><div class="fv-prog-fill" id="prog-fill"></div></div>
+          <span class="fv-prog-lbl" id="prog-lbl">1 / 10</span>
+        </div>
+        <div class="fv-scene">
+          <div class="fv-wrap" id="fv-wrap">
+            <div class="fv-card" id="fv-card">
+              <div class="fv-face fv-front">
+                <img id="img-f" alt="Pregunta">
+                <div class="fv-chip">Pregunta</div>
+              </div>
+              <div class="fv-face fv-back">
+                <img id="img-b" alt="Respuesta">
+                <div class="fv-chip">Respuesta</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="fv-cta" id="fv-cta">Clic o <span class="fv-kbd">Espacio</span> para girar</p>
+      </div>
+
+      <!-- Right: panel -->
+      <div class="fv-panel">
+
+        <div class="fv-stats">
+          <div class="fv-st gold" id="st-score">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.8 5.9 21l1.2-6.9-5-4.8 6.9-.9z"/></svg>
+            <span id="score-val">0</span>
+          </div>
+          <div class="fv-st green" id="st-streak">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c1 4-2 5-2 8a2 2 0 0 0 4 0c0-.5 0-1-.2-1.4 1.6 1 2.7 2.8 2.7 4.9a5.3 5.3 0 1 1-10.6 0c0-3.4 3-5 3.5-8 .2-1.2 1.1-2.5 2.6-3.5z"/></svg>
+            <span id="streak-val">0</span>&thinsp;racha
+          </div>
+          <div class="fv-timer" id="fv-timer">
+            <svg viewBox="0 0 44 44">
+              <circle class="t-bg" cx="22" cy="22" r="18"/>
+              <circle class="t-fg" id="t-fg" cx="22" cy="22" r="18"/>
+            </svg>
+            <span class="t-n" id="t-num">45</span>
+          </div>
+        </div>
+
+        <hr class="fv-hr">
+
+        <div>
+          <span class="fv-lbl blue">Pregunta</span>
+          <p class="fv-q" id="panel-q"></p>
+        </div>
+
+        <div class="fv-hint-wrap" id="hint-area">
+          <button class="fv-hint-btn" id="btn-hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5 2.2c-.9.8-1.6 1.3-1.9 2.3-.1.4-.2.8-.2 1.5"/><circle cx="12" cy="18" r=".6" fill="currentColor" stroke="none"/></svg>
+            Pedir pista
+            <span class="fv-hint-cost" id="hint-cost">−3 pts</span>
+          </button>
+          <div class="fv-hint-box hidden" id="hint-box"></div>
+        </div>
+
+        <hr class="fv-hr hidden" id="hr-ans">
+
+        <div class="hidden" id="ans-block">
+          <span class="fv-lbl green">Respuesta</span>
+          <p class="fv-a" id="panel-a"></p>
+        </div>
+
+        <div class="fv-rate hidden" id="rate-row">
+          <button class="rate-btn bad" id="btn-rep">↻ Repasar</button>
+          <button class="rate-btn good" id="btn-know">✓ La sé</button>
+        </div>
+
+        <p id="key-hint" style="margin-top:12px;font-family:var(--ff-mono);font-size:10.5px;color:var(--txt-faint);text-align:center;line-height:1.6" class="hidden">
+          <span class="fv-kbd" style="color:var(--txt-dim)">←</span> Repasar &nbsp;·&nbsp;
+          <span class="fv-kbd" style="color:var(--txt-dim)">→</span> La sé &nbsp;·&nbsp;
+          <span class="fv-kbd" style="color:var(--txt-dim)">H</span> Pista
+        </p>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="scr-results" class="screen hidden">
+    <div class="fv-res">
+      <div class="fv-medal" id="res-medal">🏆</div>
+      <h2 id="res-title">¡Ronda terminada!</h2>
+      <p class="rsub" id="res-sub"></p>
+      <div class="fv-best-streak">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px;height:14px;color:var(--gold)"><path d="m12 2 3 6.3 6.9.9-5 4.8 1.2 6.9L12 17.8 5.9 21l1.2-6.9-5-4.8 6.9-.9z"/></svg>
+        Mejor racha: <b id="res-streak" style="color:var(--green)">0</b>
+      </div>
+      <div class="fv-rstats">
+        <div class="fv-rstat good"><b id="res-know">0</b><span>Aprendidas</span></div>
+        <div class="fv-rstat bad"><b id="res-rep">0</b><span>A repasar</span></div>
+        <div class="fv-rstat pts"><b id="res-score">0</b><span>Puntos</span></div>
+      </div>
+      <div class="fv-ract">
+        <button class="btn primary" id="btn-again">↺ Otra ronda</button>
+        <button class="btn ghost" id="btn-home-r">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2h-4v-6h-6v6H5a2 2 0 0 1-2-2z"/></svg>
+          Inicio
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  /* ── CARD TEXT ───────────────────────────────────────── */
+  const CARDS = [
+    {
+      q: "¿Qué son los bienes?",
+      a: "Los bienes son cosas que, pudiendo procurar al hombre una utilidad, son susceptibles de apropiación por los particulares.\n\nEn doctrina se distingue \"cosa\" y \"bien\": el concepto de cosa es más amplio que el de bien (cosa es todo lo que existe, sin ser persona y, además, que pueda percibirse por los sentidos, o bien, concebirse mediante la imaginación).\n\nEn cambio, para el Código Civil, cosa y bien se utilizan como sinónimos."
+    },
+    {
+      q: "¿Cómo se clasifican los bienes?",
+      a: "1. Cosas corporales e incorporales.\n2. Cosas corporales muebles e inmuebles.\n3. Cosas específicas y genéricas.\n4. Cosas consumibles y no consumibles.\n5. Cosas fungibles y no fungibles.\n6. Cosas divisibles e indivisibles.\n7. Cosas presentes y cosas futuras.\n8. Cosas principales y accesorias.\n9. Cosas comerciables y no comerciables.\n10. Cosas singulares y universales.\n11. Cosas apropiables e inapropiables.\n12. Bienes particulares o nacionales."
+    },
+    {
+      q: "¿En qué consisten las cosas corporales e incorporales?",
+      a: "Art. 565 Código Civil —\n\nCorporales son las que tienen un ser real y pueden ser percibidas por los sentidos, como una casa, un libro. Las cosas corporales se clasifican en bienes muebles e inmuebles.\n\nIncorporales las que consisten en meros derechos, como los créditos, y las servidumbres activas. Las cosas incorporales pueden consistir en derechos reales y personales."
+    },
+    {
+      q: "¿Qué son los bienes muebles e inmuebles?",
+      a: "Bienes muebles: son aquellos que pueden transportarse de un lugar a otro, sin detrimento de su sustancia. Se clasifican en:\n  a. Bien mueble por naturaleza.\n  b. Bien mueble por anticipación.\n\nBienes inmuebles o fincas o bienes raíces: los que no pueden ser transportados de un lugar a otro sin que se altere su sustancia. Se clasifican en:\n  a. Bien inmueble por naturaleza.\n  b. Bien inmueble por adherencia.\n  c. Bien inmueble por destinación."
+    },
+    {
+      q: "¿Qué importancia tiene distinguir entre bienes muebles e inmuebles?",
+      a: "Tiene importancia en diferentes aspectos, siendo los más relevantes:\n\n1. La tradición de los bienes inmuebles se realiza a través de la inscripción del título en el CBR; la de los muebles por la simple entrega.\n2. La compraventa de un bien mueble es consensual; la de un bien inmueble es solemne (debe constar por escritura pública).\n3. En materia de incapaces, los requisitos son más estrictos para enajenar bienes raíces.\n4. Ciertos derechos de garantía, como la hipoteca, recaen solo sobre bienes inmuebles; en cambio la prenda recae solo sobre bienes muebles.\n5. La posesión de un bien inmueble generalmente se adquiere, prueba y conserva mediante la inscripción del título en el CBR.\n6. El plazo de prescripción ordinaria es de 2 años (bienes muebles) y 5 años (inmuebles).\n7. La acción rescisoria por lesión enorme procede únicamente en la venta o permuta de bienes inmuebles."
+    },
+    {
+      q: "¿Qué son los bienes muebles por naturaleza?",
+      a: "Son aquellos que pueden transportarse de un lugar a otro sin detrimento de su sustancia, y pueden dividirse en:\n\nA. Semovientes: son aquellos bienes muebles que pueden trasladarse de un lugar a otro moviéndose ellos por sí solos, como los animales.\n\nB. Inanimadas: son aquellos bienes muebles que para trasladarse de un lugar a otro requieren de una fuerza externa, por ejemplo, un libro."
+    },
+    {
+      q: "¿Qué son los bienes muebles por anticipación?",
+      a: "Art. 571 Código Civil —\n\nSon aquellos bienes inmuebles por naturaleza, por adherencia, o por destinación que, para el efecto de constituir un derecho sobre ellos en favor de otra persona que el dueño, se reputan muebles antes de su separación del inmueble al que pertenecen.\n\nEl legislador no mira estas cosas en su estado actual, es decir, unidas al inmueble, sino en su estado futuro, esto es, como cosas separadas y diferentes del inmueble."
+    },
+    {
+      q: "¿Qué son los bienes inmuebles por naturaleza?",
+      a: "Art. 568 Código Civil —\n\n\"Inmuebles o fincas o bienes raíces son las cosas que no pueden transportarse de un lugar a otro; como las tierras y minas...\""
+    },
+    {
+      q: "¿Qué son los bienes inmuebles por adherencia?",
+      a: "Art. 568 Código Civil —\n\nSon aquellos bienes que adhieren permanentemente a las cosas que no pueden transportarse de un lugar a otro, como los edificios, los árboles."
+    },
+    {
+      q: "¿Qué son los bienes inmuebles por destinación?",
+      a: "Art. 570 Código Civil —\n\nSon aquellos bienes muebles que se reputan inmuebles, al estar permanentemente destinados al uso, cultivo y beneficio de un inmueble, sin embargo de que puedan separarse sin detrimento."
+    }
+  ];
+
+  /* ── CONSTANTS ─────────────────────────────────────────── */
+  const PDF_URL  = 'uploads/salida.pdf';
+  const RATE_KEY = 'cv_ratings_v1';
+  const TIMER_T  = 45;
+  const TOTAL    = 10;
+  const C_RING   = 2 * Math.PI * 18;
+
+  /* ── RUNTIME STATE ─────────────────────────────────────── */
+  const imgs  = [];
+  let ratings = {};
+  try { ratings = JSON.parse(localStorage.getItem(RATE_KEY)||'{}'); } catch(e){}
+
+  let session = null, timerId = null, timeLeft = TIMER_T;
+
+  /* ── UTILS ─────────────────────────────────────────────── */
+  const $  = id => document.getElementById(id);
+  function showScreen(name) {
+    ['load','start','play','results'].forEach(s => {
+      const el = $('scr-' + s);
+      if (!el) return;
+      el.classList.toggle('hidden', s !== name);
+      if (s === 'load') el.style.display = (s === name) ? 'flex' : 'none';
+    });
+  }
+  function shuffle(a) {
+    a = a.slice();
+    for (let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}
+    return a;
+  }
+
+  /* ── LOAD PDF ──────────────────────────────────────────── */
+  async function loadPDF() {
+    const doc = await pdfjsLib.getDocument(PDF_URL).promise;
+    for (let p = 1; p <= 20; p++) {
+      const page = await doc.getPage(p);
+      const vp   = page.getViewport({ scale: 1.1 });
+      const cvs  = document.createElement('canvas');
+      cvs.width = vp.width; cvs.height = vp.height;
+      await page.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
+      imgs.push(cvs.toDataURL('image/jpeg', 0.82));
+      $('ld-bar').style.width = (p/20*100) + '%';
+      $('ld-txt').textContent = p + ' / 20 páginas';
+    }
+    $('dp-img').src = imgs[0];
+    showScreen('start');
+  }
+
+  /* ── GAME ──────────────────────────────────────────────── */
+  function startGame() {
+    session = {
+      queue: shuffle([...Array(TOTAL).keys()]),
+      idx: 0, score: 0, streak: 0, bestStreak: 0,
+      hintLevel: 0, cardFlipped: false, rated: false,
+      results: []
+    };
+    showScreen('play');
+    renderCard(true);
+  }
+
+  function renderCard(first) {
+    const ci = session.queue[session.idx];
+    session.hintLevel = 0;
+    session.cardFlipped = false;
+    session.rated = false;
+
+    // Snap card to front (no transition)
+    const card = $('fv-card'), wrap = $('fv-wrap');
+    card.style.transition = 'none';
+    card.style.transform  = '';
+    wrap.classList.remove('is-flipped','leaving','arriving');
+
+    // Set images
+    $('img-f').src = imgs[ci * 2];
+    $('img-b').src = imgs[ci * 2 + 1];
+
+    // Panel reset
+    $('panel-q').textContent = CARDS[ci].q;
+    $('panel-a').textContent = '';
+    $('ans-block').classList.add('hidden');
+    $('hr-ans').classList.add('hidden');
+    $('rate-row').classList.add('hidden');
+    $('key-hint').classList.add('hidden');
+    $('hint-area').classList.remove('hidden');
+    $('hint-box').classList.add('hidden');
+    $('hint-box').textContent = '';
+    $('btn-hint').disabled = false;
+    $('hint-cost').textContent = '−3 pts';
+    $('fv-cta').style.opacity = '1';
+
+    // Progress
+    $('prog-fill').style.width = (session.idx / TOTAL * 100) + '%';
+    $('prog-lbl').textContent  = (session.idx + 1) + ' / ' + TOTAL;
+    $('score-val').textContent = session.score;
+    $('streak-val').textContent = session.streak;
+
+    // Re-enable transition + arriving animation
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        card.style.transition = '';
+        if (!first) {
+          wrap.classList.add('arriving');
+          setTimeout(() => wrap.classList.remove('arriving'), 450);
+        }
+      });
+    });
+
+    startTimer();
+  }
+
+  function flipCard() {
+    if (session.cardFlipped) return;
+    session.cardFlipped = true;
+    stopTimer();
+
+    const ci = session.queue[session.idx];
+    $('fv-card').style.transform = 'rotateY(180deg)';
+    $('fv-wrap').classList.add('is-flipped');
+    $('fv-cta').style.opacity = '0';
+
+    setTimeout(() => {
+      $('panel-a').textContent = CARDS[ci].a;
+      $('ans-block').classList.remove('hidden');
+      $('hr-ans').classList.remove('hidden');
+      $('rate-row').classList.remove('hidden');
+      $('hint-area').classList.add('hidden');
+      $('key-hint').classList.remove('hidden');
+    }, 320);
+  }
+
+  function requestHint() {
+    if (session.cardFlipped) return;
+    const ci = session.queue[session.idx];
+    session.hintLevel = Math.min(session.hintLevel + 1, 2);
+    const parts = CARDS[ci].a.split(/[.\n]/).filter(Boolean);
+    const txt = session.hintLevel === 1
+      ? (parts[0]||'').trim().substring(0,90) + '…'
+      : (parts[0]||'').trim() + (parts[1] ? '\n' + parts[1].trim() : '') + '…';
+    $('hint-box').textContent = txt;
+    $('hint-box').classList.remove('hidden');
+    if (session.hintLevel >= 2) {
+      $('btn-hint').disabled = true;
+      $('hint-cost').textContent = '(agotadas)';
+    } else {
+      $('hint-cost').textContent = '−5 pts (2ª)';
+    }
+  }
+
+  function rateCard(know) {
+    if (!session.cardFlipped || session.rated) return;
+    session.rated = true;
+
+    const pts = know ? Math.max(2, 10 - session.hintLevel * 3) : 0;
+    if (know) {
+      session.streak++;
+      session.bestStreak = Math.max(session.bestStreak, session.streak);
+      const bonus = session.streak > 1 ? Math.min((session.streak-1)*2, 8) : 0;
+      session.score += pts + bonus;
+      showPop('+' + (pts + bonus), true);
+    } else {
+      session.streak = 0;
+    }
+    session.results.push({ know, hints: session.hintLevel });
+    const ci = session.queue[session.idx];
+    ratings[ci] = know ? 'k' : 'r';
+    localStorage.setItem(RATE_KEY, JSON.stringify(ratings));
+
+    $('score-val').textContent  = session.score;
+    $('streak-val').textContent = session.streak;
+
+    // Slide out
+    const wrap = $('fv-wrap');
+    wrap.classList.add('leaving');
+    setTimeout(() => {
+      session.idx++;
+      if (session.idx >= TOTAL) { showResults(); return; }
+      renderCard(false);
+    }, 310);
+  }
+
+  /* ── TIMER ─────────────────────────────────────────────── */
+  function startTimer() {
+    stopTimer();
+    timeLeft = TIMER_T;
+    updateTimer();
+    timerId = setInterval(() => {
+      timeLeft = Math.max(0, timeLeft - 0.1);
+      updateTimer();
+      if (timeLeft <= 0) { stopTimer(); onTimeout(); }
+    }, 100);
+  }
+  function stopTimer() { if (timerId){clearInterval(timerId);timerId=null;} }
+  function updateTimer() {
+    const n=$('t-num'), fg=$('t-fg'), t=$('fv-timer');
+    if (!n) return;
+    n.textContent = Math.ceil(timeLeft);
+    fg.style.strokeDasharray  = C_RING;
+    fg.style.strokeDashoffset = C_RING * (1 - timeLeft / TIMER_T);
+    if (t) t.classList.toggle('warn', timeLeft <= 10);
+  }
+  function onTimeout() {
+    if (!session.cardFlipped) {
+      flipCard();
+      setTimeout(() => { if (!session.rated) rateCard(false); }, 1800);
+    }
+  }
+
+  /* ── SCORE POP ─────────────────────────────────────────── */
+  function showPop(txt, plus) {
+    const chip = $('st-score');
+    if (!chip) return;
+    const r = chip.getBoundingClientRect();
+    const pop = document.createElement('div');
+    pop.className = 'fv-pop ' + (plus ? 'plus' : 'minus');
+    pop.textContent = txt;
+    pop.style.left = (r.left + r.width/2 - 18) + 'px';
+    pop.style.top  = (r.top - 8) + 'px';
+    document.body.appendChild(pop);
+    setTimeout(() => pop.remove(), 1200);
+  }
+
+  /* ── RESULTS ──────────────────────────────────────────── */
+  function showResults() {
+    stopTimer();
+    const know = session.results.filter(r=>r.know).length;
+    const acc  = Math.round(know/TOTAL*100);
+    $('res-know').textContent  = know;
+    $('res-rep').textContent   = TOTAL - know;
+    $('res-score').textContent = session.score;
+    $('res-streak').textContent= session.bestStreak;
+    let title, sub, medal;
+    if (acc>=80){title='¡Excelente!';sub='Nivel examen de grado. Sigue así.';medal='🏆';}
+    else if(acc>=50){title='¡Buen progreso!';sub='Repasa las que fallaste y vuelve a intentarlo.';medal='📚';}
+    else{title='A seguir estudiando';sub='Cada error es un paso más cerca del aprendizaje.';medal='💪';}
+    $('res-medal').textContent = medal;
+    $('res-title').textContent = title;
+    $('res-sub').textContent   = sub;
+    showScreen('results');
+  }
+
+  /* ── EVENTS ─────────────────────────────────────────────── */
+  $('fv-wrap').addEventListener('click', flipCard);
+  $('btn-hint').addEventListener('click', e => { e.stopPropagation(); requestHint(); });
+  $('btn-rep').addEventListener('click',  e => { e.stopPropagation(); rateCard(false); });
+  $('btn-know').addEventListener('click', e => { e.stopPropagation(); rateCard(true); });
+  $('btn-start').addEventListener('click', startGame);
+  $('btn-again').addEventListener('click', startGame);
+  $('btn-home-r').addEventListener('click', () => { location.href='Los Bienes - Juego de Estudio.html'; });
+  $('btn-home-top').addEventListener('click', () => { location.href='Los Bienes - Juego de Estudio.html'; });
+
+  document.addEventListener('keydown', e => {
+    if ($('scr-play').classList.contains('hidden')) return;
+    if (e.code==='Space')     { e.preventDefault(); flipCard(); }
+    if (e.key.toLowerCase()==='h') { e.preventDefault(); requestHint(); }
+    if (e.code==='ArrowRight' && session && session.cardFlipped) rateCard(true);
+    if (e.code==='ArrowLeft'  && session && session.cardFlipped) rateCard(false);
+  });
+
+  try {
+    const gs = JSON.parse(localStorage.getItem('bienes_game_v1')||'{}');
+    if (gs.points) $('total-pts').textContent = gs.points;
+  } catch(e){}
+
+  /* ── BOOT ─────────────────────────────────────────────── */
+  loadPDF().catch(err => {
+    console.error('PDF load error:', err);
+    $('ld-txt').textContent = '⚠ Error: ' + err.message;
+  });
+</script>
+</body>
+</html>
